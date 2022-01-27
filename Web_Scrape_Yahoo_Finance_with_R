@@ -1,0 +1,29 @@
+##Scrape sp500 Data from Yahoo Finance 2012-2019
+##For the purposes of this project a threshhold of 75% valid price success rate is adequate because companies are added and removed from the index periodically. 
+
+install.packages('BatchGetSymbols')
+install.packages('RODBC')
+install.packages('DBI')
+
+library(BatchGetSymbols)
+
+first.date <- “2012-01-01”
+last.date <- “2019-12-31”
+
+df.SP500 <- GetSP500Stocks()
+tickers <- df.SP500$Tickers
+
+l.out <- BatchGetSymbols(tickers = tickers,
+                         first.date = first.date,
+                         last.date = last.date)
+
+print(l.out$df.control)
+print(l.out$df.tickers)
+
+##Save df to SQL
+library(RODBC)
+library(DBI)
+
+connection <- odbcConnect("SQLCONNECT")
+data <- l.out$df.tickers
+sqlSave(connection, data, tablename="sp500", varTypes = c(ref.date="date"))
