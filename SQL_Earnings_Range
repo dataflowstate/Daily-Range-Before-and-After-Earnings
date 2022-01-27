@@ -1,0 +1,165 @@
+
+--Remove unneeded columns
+ALTER TABLE dbo.sp500_2012_2019
+DROP COLUMN rownames, priceadjusted, retadjustedprices;
+
+
+–-Check for NULL
+Select *
+From dbo.sp500_2012_2019
+Where  priceopen IS NULL OR
+pricehigh IS NULL OR
+PRICELOW IS NULL OR
+priceclose IS NULL OR
+volume IS NULL OR
+refdate IS NULL OR
+ticker IS NULL;
+ 
+ 
+–Alter Columns to correct data type
+ALTER TABLE dbo.sp500_2012_2019
+ALTER COLUMN priceopen Decimal(12,2);
+
+ALTER TABLE dbo.sp500_2012_2019
+ALTER COLUMN pricehigh Decimal(12,2);
+
+ALTER TABLE dbo.sp500_2012_2019
+ALTER COLUMN pricelow Decimal(12,2);
+
+ALTER TABLE dbo.sp500_2012_2019
+ALTER COLUMN priceclose Decimal(12,2);
+
+ALTER TABLE dbo.sp500_2012_2019
+ALTER COLUMN retclosingprices Decimal(12,4);
+
+
+-–Check for Outliers
+Select TOP 100 *
+From dbo.sp500_2012_2019 
+Order By priceopen asc;
+
+Select TOP 100 *
+From dbo.sp500_2012_2019 
+Order By priceopen desc;
+–-Repeat for each column-–
+
+
+-–Calculate daily range
+ALTER TABLE dbo.SP500_2012_2019
+ADD dailyrange%
+AS ((pricehigh-pricelow)/priceopen * 100);
+
+
+–-Join earnings table and sector
+Select 
+dbo.sp500_2012_2019.*, 
+dbo.earnings.release_time, 
+dbo.sp500_tckr_sector.Sector
+Into dbo.sp500_2012_2019earn
+From dbo.sp500_2012_2019
+Left Join dbo.earnings
+on dbo.sp500_2012_2019.ticker = dbo.earnings.symbol and dbo.sp500_2012_2019.refdate = dbo.earnings."date"
+Left Join dbo.sp500_tckr_sector
+on dbo.sp500_2012_2019.ticker = dbo.sp500_tckr_sector.Symbol;
+
+
+-–Round daily return
+ALTER TABLE dbo.sp500_2012_2019earn
+ALTER COLUMN dailyrange% Decimal(12,2);
+
+
+--Get all data in the rows
+Select *,
+LAG("dailyrange%",5)over(PARTITION BY ticker Order by refdate) "Day-5",
+LAG("dailyrange%",4)over(PARTITION BY ticker Order by refdate) "Day-4",
+LAG("dailyrange%",3)over(PARTITION BY ticker Order by refdate) "Day-3",
+LAG("dailyrange%",2)over(PARTITION BY ticker Order by refdate) "Day-2",
+LAG("dailyrange%",1)over(PARTITION BY ticker Order by refdate) "Day-1",
+LEAD("dailyrange%",1)over(PARTITION BY ticker Order by refdate) "Day+1",
+LEAD("dailyrange%",2)over(PARTITION BY ticker Order by refdate) "Day+2",
+LEAD("dailyrange%",3)over(PARTITION BY ticker Order by refdate) "Day+3",
+LEAD("dailyrange%",4)over(PARTITION BY ticker Order by refdate) "Day+4",
+LEAD("dailyrange%",5)over(PARTITION BY ticker Order by refdate) "Day+5"
+Into dbo.sp500_2012_2019lela
+From dbo.sp500_2012_2019earn;
+
+
+--Bump days forward or back with dailyrange% depending on pre or post earnings
+
+UPDATE dbo.sp500_2012_2019lela SET "Day+5" = "Day+4"
+WHERE release_time = 'pre';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day+4" = "Day+3"
+WHERE release_time = 'pre';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day+3" = "Day+2"
+WHERE release_time = 'pre';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day+2" = "Day+1"
+WHERE release_time = 'pre';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day+1" = "dailyrange%"
+WHERE release_time = 'pre';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day-5" = "Day-4"
+WHERE release_time = 'post';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day-4" = "Day-3"
+WHERE release_time = 'post';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day-3" = "Day-2"
+WHERE release_time = 'post';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day-2" = "Day-1"
+WHERE release_time = 'post';
+
+UPDATE dbo.sp500_2012_2019lela SET "Day-1" = "dailyrange%"
+WHERE release_time = 'post';
+
+
+-–Average of each day total
+Select avg("Day-5") as "avgday-5",
+avg("Day-4") as "avgday-4",
+avg("Day-3") as "avgday-3",
+avg("Day-2") as "avgday-2",
+avg("Day-1") as "avgday-1",
+avg("Day+1") as "avgday+1",
+avg("Day+2") as "avgday+2",
+avg("Day+3") as "avgday+3",
+avg("Day+4") as "avgday+4",
+avg("Day+5") as "avgday+5"
+From dbo.sp500_2012_2019lela
+Where release_time = 'pre' or release_time = 'post';
+
+–-Distributions for Days(-2) through (+2)
+--Find upper limit of each column
+Select "Day-2"
+From dbo.sp500_2012_2019lela
+Where release_time = 'pre' or release_time = 'post'
+order by "Day-2" desc;
+
+-–Count histogram values every 5% through 30%
+Select Count("Day+2")
+From dbo.sp500_2012_2019lela
+Where "Day+2" between 0 and 5 and (release_time = 'pre' or release_time = 'post');
+
+Select Count("Day+2")
+From dbo.sp500_2012_2019lela
+Where "Day+2" between 5 and 10 and (release_time = 'pre' or release_time = 'post');
+
+Select Count("Day+2")
+From dbo.sp500_2012_2019lela
+Where "Day+2" between 10  and 15 and (release_time = 'pre' or release_time = 'post');
+
+Select Count("Day+2")
+From dbo.sp500_2012_2019lela
+Where "Day+2" between 15 and 20 and (release_time = 'pre' or release_time = 'post');
+
+Select Count("Day+2")
+From dbo.sp500_2012_2019lela
+Where "Day+2" between 20 and 25 and (release_time = 'pre' or release_time = 'post');
+
+Select Count("Day+2")
+From dbo.sp500_2012_2019lela
+Where "Day+2" between 25 and 30 and (release_time = 'pre' or release_time = 'post');
+–-Repeat for each day–-
